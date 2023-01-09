@@ -12,11 +12,11 @@ K = 3L
 Lambda = matrix(0L, D, K)#DxK
 Lambda[1:4, 1] = 1L
 Lambda[5:9, 2] = 2L
-Lambda[10, 3] = 1L
+Lambda[10, 3] = 3L #TODO doesnt work if this is small (eg 1)
 Y = mvrnorm(N, rep(0L, D) , tcrossprod(Lambda) + diag(1L,D))
 
 # Convert dimensions to discrete
-discreteDims = c(2, ncol(Y))
+discreteDims = c(2L, ncol(Y))
 boundaries = list(c(-2, -1, 1, 2 ), c(-2, 0, 1 ))
 MakeDiscrete <- function(Y, discreteDims, boundaries, doplot=TRUE){
   discreteParams = vector(mode = "list", length = length(discreteDims))
@@ -42,7 +42,7 @@ MakeDiscrete <- function(Y, discreteDims, boundaries, doplot=TRUE){
   }
   return(Y)
 }
-Y = MakeDiscrete(Y, discreteDims, boundaries)
+#Y = MakeDiscrete(Y, discreteDims, boundaries)
 
 
 
@@ -141,24 +141,30 @@ CAVI <- function(Y, maxiterations=1000L, tol = 0.1, seed=NULL){
 
 
 # Perform CAVI on data repeats times (with random initialisations)
-repeats=100
+repeats=100L
 results = vector(mode = "list", length = repeats)
 ELBOlast = numeric(repeats)
 for (i in 1:repeats){
-  results[[i]] = CAVI(Y, tol=0.1, seed = 1908+i)
+  results[[i]] = CAVI(Y, tol=0.01, seed = 1908+i)
   ELBOlast[i] = results[[i]]$ELBO[length(results[[i]]$ELBO)]
   print(i/repeats)
 }
 
 idx = which.max(ELBOlast)
-plot(results[[idx]]$ELBO, type='l', col='red', xlab = 'Iteration', ylab= 'ELBO')
+plot(results[[idx]]$ELBO, type='o', col='red', xlab = 'Iteration', ylab= 'ELBO')
 temp = c(1:repeats)
 for (j in sample(temp[-idx], 4)){
   lines(results[[j]]$ELBO)
 }
 print(ELBOlast[idx])
-Lambda = results[[idx]]$Lambda
-print(round(Lambda,1))
+VILambda = results[[idx]]$Lambda
+print(round(VILambda,1))
+
+
+nonIncreasingELBOidx = which(sapply(results, function(x) is.unsorted(x$ELBO)))
+plot(results[[nonIncreasingELBOidx[1]]]$ELBO)
+plot(diff(results[[nonIncreasingELBOidx[1]]]$ELBO)>0)
+
 
 
 

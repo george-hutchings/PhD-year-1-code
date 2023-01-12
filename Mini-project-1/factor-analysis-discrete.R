@@ -85,7 +85,7 @@ CAVI <- function(Y, discreteDims=c() ,maxiterations=1000L, tol = 0.1, seed=NULL)
   
   
   parameters$Zboundaries =  apply(Y[,discreteDims], 2L, boundaries, simplify=FALSE)
-  parameters$M.Z = rnorm(parameters$NdiscreteDims) #not the actual mean! only the mean in the truncated normal
+  parameters$M.Z = matrix(rnorm(parameters$N*parameters$NdiscreteDims), nrow=parameters$N, ncol=parameters$NdiscreteDims) #not the actual mean! only the mean in the truncated normal
   #parameters$Zcov = diag(1L, nrow=parameters$N) #for each discrete dimension
   
   
@@ -129,13 +129,14 @@ CAVI <- function(Y, discreteDims=c() ,maxiterations=1000L, tol = 0.1, seed=NULL)
     x = vector(mode = "list", length = parameters$NdiscreteDim)
     for (i in 1:parameters$NdiscreteDims){
     #sigma = 1 so no need to divide by it
-    AlphaBeta= parameters$Zboundaries[[i]]- parameters$M.Z[i]
+    AlphaBeta = parameters$Zboundaries[[i]][Y[,discreteDims[i]], ]- parameters$M.Z[i]
     pt1 = dnorm(AlphaBeta)
     pt2 = pnorm(AlphaBeta)
     x[[i]] =  pt1[,1] - pt1[,2] / (pt2[,2] - pt2[,1])
     }
     x
   }
+  E.Z(parameters)
  
   
   ## Function for calculating ELBO TODO: check it

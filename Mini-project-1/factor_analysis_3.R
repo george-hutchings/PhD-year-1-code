@@ -131,5 +131,8 @@ print(ELBOlast[idx])
 Lambda = results[[idx]]$Lambda
 print(round(Lambda,1))
 
-
+# TODO sometimes ELBO is nonincreasing
+# nonIncreasingELBOidx = which(sapply(results, function(x) is.unsorted(x$ELBO)))
+# plot(results[[nonIncreasingELBOidx[1]]]$ELBO)
+# print(diff(results[[nonIncreasingELBOidx[1]]]$ELBO))
 

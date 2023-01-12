@@ -24,7 +24,7 @@ MakeDiscrete <- function(Y, discreteDims, boundaries, doplot=TRUE){
     discreteParams[[i]]$dimension = discreteDims[i]
     discreteParams[[i]]$boundary = boundaries[[i]]
     discreteParams[[i]]$Ngroups = length( discreteParams[[i]]$boundary)+1
-    discreteParams[[i]]$scaledY = scale(Y[,discreteParams[[i]]$dimension]) #TODO scale like this or using lambda?
+    discreteParams[[i]]$scaledY = scale(Y[,discreteParams[[i]]$dimension])
     discreteParams[[i]]$discreteY = as.integer(findInterval(discreteParams[[i]]$scaledY, c(-Inf, discreteParams[[i]]$boundary, Inf)))
     if (doplot){
       temp = brewer.pal(n = discreteParams[[i]]$Ngroups, name = "Dark2")
@@ -42,4 +42,5 @@ MakeDiscrete <- function(Y, discreteDims, boundaries, doplot=TRUE){
   }
   return(Y)
 }
-#Y = MakeDiscrete(Y, discreteDims, boundaries)
+Y = MakeDiscrete(Y, discreteDims, boundaries, doplot = FALSE)
+

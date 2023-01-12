@@ -12,7 +12,7 @@ K = 3L
 Lambda = matrix(0L, D, K)#DxK
 Lambda[1:4, 1] = 1L
 Lambda[5:9, 2] = 2L
-Lambda[10, 3] = 1L
+Lambda[10, 3] = 3L #doesnt work if small??
 Y = mvrnorm(N, rep(0L, D) , tcrossprod(Lambda) + diag(1L,D))
 
 
@@ -26,10 +26,9 @@ CAVI <- function(Y, maxiterations=1000L, tol = 0.1, seed=NULL){
   parameters$a0 = parameters$b0 = 1e-3
   
   ## Initialise Lambda parameters
-  # Initialise mean of Lambda by PCA (and varimax)
+  # Initialise mean of Lambda by PCA 
   pY = prcomp(Y, scale=TRUE, rank=parameters$K)
-  temp = varimax(pY$rotation%*%diag(pY$sdev[1:parameters$K]**2), normalize=FALSE) #TODO normalize??
-  parameters$M.Lambda = temp$loadings[1:parameters$D,]
+  parameters$M.Lambda = pY$rotation%*%diag(pY$sdev[1:parameters$K]**2) 
   #Initialised by Wishart distribution, last dimension refers to the vector the covariance matrix corresponds to 
   parameters$S.Lambda =  rWishart(parameters$D, parameters$K, diag(1/parameters$K,parameters$K)) 
   
@@ -116,20 +115,22 @@ repeats=100
 results = vector(mode = "list", length = repeats)
 ELBOlast = numeric(repeats)
 for (i in 1:repeats){
-  results[[i]] = CAVI(Y, tol=0.1, seed = 1908+i)
+  results[[i]] = CAVI(Y, tol=0.01, seed = 1908+i)
   ELBOlast[i] = results[[i]]$ELBO[length(results[[i]]$ELBO)]
   print(i/repeats)
 }
 
 idx = which.max(ELBOlast)
-plot(results[[idx]]$ELBO, type='l', col='red', xlab = 'Iteration', ylab= 'ELBO')
+plot(results[[idx]]$ELBO, type='o', col='red', xlab = 'Iteration', ylab= 'ELBO')
 temp = c(1:repeats)
 for (j in sample(temp[-idx], 4)){
   lines(results[[j]]$ELBO)
 }
 print(ELBOlast[idx])
-Lambda = results[[idx]]$Lambda
-print(round(Lambda,1))
+VILambda = results[[idx]]$Lambda
+print(Lambda)
+print(round(VILambda,1))
+
 
 # TODO sometimes ELBO is nonincreasing
 # nonIncreasingELBOidx = which(sapply(results, function(x) is.unsorted(x$ELBO)))

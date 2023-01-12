@@ -44,3 +44,5 @@ MakeDiscrete <- function(Y, discreteDims, boundaries, doplot=TRUE){
 }
 Y = MakeDiscrete(Y, discreteDims, boundaries, doplot = FALSE)
 
+
+

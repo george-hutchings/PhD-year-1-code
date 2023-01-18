@@ -13,7 +13,8 @@ Lambda = matrix(0L, D, K)#DxK
 Lambda[1:4, 1] = 1L
 Lambda[5:9, 2] = 2L
 Lambda[10, 3] = 3L #doesnt work if small??
-Y = mvrnorm(N, rep(0L, D) , tcrossprod(Lambda) + diag(1L,D))
+Sigma = diag(1L, D)
+Y = mvrnorm(N, rep(0L, D) , tcrossprod(Lambda) + Sigma)
 
 
 
@@ -24,6 +25,7 @@ CAVI <- function(Y, maxiterations=1000L, tol = 0.1, seed=NULL){
   parameters$D = ncol(Y)
   parameters$K = K
   parameters$a0 = parameters$b0 = 1e-3
+  parameters$alpha0 = parameters$beta0 = 1e-3
   
   ## Initialise Lambda parameters
   # Initialise mean of Lambda by PCA 
@@ -40,6 +42,10 @@ CAVI <- function(Y, maxiterations=1000L, tol = 0.1, seed=NULL){
   parameters$b = matrix(rgamma(parameters$D*parameters$K, shape=2, rate= 1/parameters$b0), nrow=parameters$D, ncol=parameters$K) 
   parameters$a = parameters$a0 + 0.5
   
+  ## Initialise beta parameters (alpha does not change)
+  parameters$beta = rgamma(parameters$D, shape=2, rate= 1/parameters$b0)
+  parameters$alpha = parameters$a0 + 0.5*parameters$N
+  
   
   # Functions for calculating expectations
   E.Lambda <- function(parameters){
@@ -48,6 +54,20 @@ CAVI <- function(Y, maxiterations=1000L, tol = 0.1, seed=NULL){
   E.LambdaTLambda <- function(parameters) {
     crossprod(parameters$M.Lambda) + rowSums(parameters$S.Lambda,dims=2L)
   }
+  
+  E.A <- function(parameters) {
+    parameters$alpha / parameters$beta
+  }
+  
+  E.LambdaTALambda <-function(parameters){
+    m = parameters$S.Lambda
+    tempE.A = E.A(parameters)
+    for (i in 1:parameters$D){
+      m[,,i] = parameters$S.Lambda[,,i]*tempE.A[i]
+    }
+    crossprod(parameters$M.Lambda*tempE.A, parameters$M.Lambda) + rowSums(m, dims=2L)
+  }
+  
   E.Lambda2 <-function(parameters){
     (parameters$M.Lambda**2) + t(apply(parameters$S.Lambda, 3L, diag))
   }
@@ -83,18 +103,31 @@ CAVI <- function(Y, maxiterations=1000L, tol = 0.1, seed=NULL){
   # Loop for performing CAVI, until ELBO - mean(ELBO) is < tol for 5 iterations
   ELBOvec = numeric(maxiterations)
   for (iter in 1:maxiterations){
-    parameters$S.Eta = solve(E.LambdaTLambda(parameters) + diag(1,parameters$K,parameters$K)) # The same for each observation
-    parameters$M.Eta = tcrossprod(Y, tcrossprod(parameters$S.Eta, E.Lambda(parameters)))
+    EA = E.A(parameters)
+    
+    parameters$S.Eta = solve(E.LambdaTALambda(parameters) + diag(1,parameters$K,parameters$K)) # The same for each observation
+    parameters$M.Eta = tcrossprod(Y, tcrossprod(parameters$S.Eta,E.Lambda(parameters)*EA))
+    
     
     
     ETau = E.Tau(parameters)
     EEtaTEta = E.EtaTEta(parameters)
     for (i in 1:parameters$D){
-      parameters$S.Lambda[,,i] = solve(EEtaTEta + diag(ETau[i,]))
-      parameters$M.Lambda[i,] = parameters$S.Lambda[,,i]%*%(crossprod(parameters$M.Eta,Y[,i]))
+      parameters$S.Lambda[,,i] = solve((EA[i]*EEtaTEta) + diag(ETau[i,]))
+      print(parameters$S.Lambda[,,i])
+      parameters$M.Lambda[i,] = parameters$S.Lambda[,,i]%*%(crossprod(parameters$M.Eta,Y[,i]))*EA[i]
     }
     
-    parameters$b = parameters$b0 + 0.5 *E.Lambda2(parameters)
+    parameters$b = parameters$b0 + 0.5*E.Lambda2(parameters)
+    
+    trASigma = sum(diag(EEtaTEta)%*%parameters$S.Eta)
+    for (j in 1:parameters$D){
+      parameters$beta[j] =  sum(Y[,j]**2) - 
+        2*(Y[,j]%*%parameters$M.Eta)%*%parameters$M.Lambda[j,]
+      + trASigma + crossprod(parameters$M.Lambda[j,], EEtaTEta%*%parameters$M.Lambda[j,])
+    }
+    parameters$beta = parameters$beta0 + 0.5*parameters$beta
+    
     
     ELBOvec[iter] = ELBO(parameters)
     if (iter>5){

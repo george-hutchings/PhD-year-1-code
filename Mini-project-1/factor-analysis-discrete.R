@@ -3,10 +3,10 @@ rm(list = ls()) # Remove variables
 if (!require("pacman")) {
   install.packages("pacman")
 }
-pacman::p_load(MASS, pracma, RColorBrewer)
+pacman::p_load(MASS, pracma, RColorBrewer, truncnorm)
 
 ## Generate Data
-N = 100L
+N = 1000L
 D = 10L
 K = 3L
 Lambda = matrix(0L, D, K)#DxK
@@ -17,35 +17,16 @@ Y = mvrnorm(N, rep(0L, D) , tcrossprod(Lambda) + diag(1L,D))
 
 # Convert dimensions to discrete
 discreteDims = c(2L, ncol(Y))
-boundaries = list(c(-2, -1, 1, 2 ), c(-2, 0, 1 ))
-MakeDiscrete <- function(Y, discreteDims, boundaries, doplot=TRUE){
-  discreteParams = vector(mode = "list", length = length(discreteDims))
-  for (i in 1:length(discreteDims)){
-    discreteParams[[i]]$dimension = discreteDims[i]
-    discreteParams[[i]]$boundary = boundaries[[i]]
-    discreteParams[[i]]$Ngroups = length( discreteParams[[i]]$boundary)+1
-    discreteParams[[i]]$scaledY = scale(Y[,discreteParams[[i]]$dimension]) #TODO scale like this or using lambda?
-    discreteParams[[i]]$discreteY = as.integer(findInterval(discreteParams[[i]]$scaledY, c(-Inf, discreteParams[[i]]$boundary, Inf)))
-    if (doplot){
-      temp = brewer.pal(n = discreteParams[[i]]$Ngroups, name = "Dark2")
-      pseudoBoundaries = c(discreteParams[[i]]$boundary[1]-3,
-                           discreteParams[[i]]$boundary, 
-                           discreteParams[[i]]$boundary[length(discreteParams[[i]]$boundary)] +3)
-      plot(pseudoBoundaries, dnorm(pseudoBoundaries), ylim=c(0, 0.5), xlab = 'x', ylab='')
-      for (j in 1:discreteParams[[i]]$Ngroups){
-        xx = linspace(pseudoBoundaries[j], pseudoBoundaries[j+1])
-        lines(xx, dnorm(xx), col=temp[j])
-      }
-      plot(Y[,discreteParams[[i]]$dimension], discreteParams[[i]]$discreteY)
-    }
-    Y[, discreteParams[[i]]$dimensio] = discreteParams[[i]]$discreteY
-  }
-  return(Y)
+groups = list(c(0.1,0.1,0.5,0.3), c(0.1,0.4,0.2,0.2,0.1)) # ith element is probability of being in group i 
+MakeDiscrete <- function(Y, discreteDims, groups, doplot=TRUE){
+  discreteY = sapply(1:length(discreteDims), function(i) stepfun(cumsum(groups[[i]]), 1:(length(groups[[i]])+1L))( pnorm(scale(Y[, discreteDims[i]])) ) )
+  Y[,discreteDims] = discreteY
+  Y
 }
-Y = MakeDiscrete(Y, discreteDims, boundaries)
+Y = MakeDiscrete(Y, discreteDims, groups)
 
 
-CAVI <- function(Y, discreteDims=c() ,maxiterations=1000L, tol = 0.1, seed=NULL){
+CAVI <- function(Y, discreteDims=c(), maxiterations=1000L, tol = 0.1, seed=NULL){
   if (!is.null(seed)){set.seed(seed)}
   parameters = c()
   parameters$N = nrow(Y)
@@ -83,10 +64,17 @@ CAVI <- function(Y, discreteDims=c() ,maxiterations=1000L, tol = 0.1, seed=NULL)
     m
   }
   
+  Y[,discreteDims] = Y[,discreteDims] - (apply(Y[,discreteDims],2,min)-1L) #ensure starting 1L TODO: groups must be non empty and be 1,2,3,4....
   
   parameters$Zboundaries =  apply(Y[,discreteDims], 2L, boundaries, simplify=FALSE)
   parameters$M.Z = matrix(rnorm(parameters$N*parameters$NdiscreteDims), nrow=parameters$N, ncol=parameters$NdiscreteDims) #not the actual mean! only the mean in the truncated normal
   #parameters$Zcov = diag(1L, nrow=parameters$N) #for each discrete dimension
+  
+  parameters$pseudoY = Y
+  parameters$pseudoY[, discreteDims] = sapply(1:parameters$NdiscreteDims, 
+                                      function(i) rtruncnorm(1, a=parameters$Zboundaries[[i]][Y[,discreteDims[i]], ][,1],
+                                      b=parameters$Zboundaries[[i]][Y[,discreteDims[i]], ][,2], 
+                                      mean=parameters$M.Z[,i]))
   
   
   ## Initialise Lambda parameters
@@ -102,7 +90,7 @@ CAVI <- function(Y, discreteDims=c() ,maxiterations=1000L, tol = 0.1, seed=NULL)
   
   ## Initialise b parameters (a does not change)
   parameters$b = matrix(rgamma(parameters$D*parameters$K, shape=2, rate= 1/parameters$b0), nrow=parameters$D, ncol=parameters$K) 
-  parameters$a = parameters$a0 + 1
+  parameters$a = parameters$a0 + 1/2
   
   
   # Functions for calculating expectations
@@ -126,17 +114,11 @@ CAVI <- function(Y, discreteDims=c() ,maxiterations=1000L, tol = 0.1, seed=NULL)
   }
   
   E.Z <- function(parameters){
-    x = vector(mode = "list", length = parameters$NdiscreteDim)
-    for (i in 1:parameters$NdiscreteDims){
-    #sigma = 1 so no need to divide by it
-    AlphaBeta = parameters$Zboundaries[[i]][Y[,discreteDims[i]], ]- parameters$M.Z[i]
-    pt1 = dnorm(AlphaBeta)
-    pt2 = pnorm(AlphaBeta)
-    x[[i]] =  pt1[,1] - pt1[,2] / (pt2[,2] - pt2[,1])
-    }
-    x
+    sapply(1:parameters$NdiscreteDims, 
+           function(i) etruncnorm(a=parameters$Zboundaries[[i]][Y[,discreteDims[i]], ][,1],
+                                  b=parameters$Zboundaries[[i]][Y[,discreteDims[i]], ][,2], 
+                                  mean=parameters$M.Z[,i]))
   }
-  E.Z(parameters)
  
   
   ## Function for calculating ELBO TODO: check it
@@ -173,10 +155,12 @@ CAVI <- function(Y, discreteDims=c() ,maxiterations=1000L, tol = 0.1, seed=NULL)
       parameters$S.Lambda[,,i] = solve(EEtaTEta + diag(ETau[i,]))
       parameters$M.Lambda[i,] = parameters$S.Lambda[,,i]%*%(crossprod(parameters$M.Eta,parameters$pseudoY[,i]))
       if (i%in%discreteDims){
-        
       }
-      
     }
+    
+    # update Z (pseudoY with discrete dimensions)
+    parameters$M.Z = tcrossprod(parameters$M.Eta, parameters$M.Lambda[discreteDims,])
+    parameters$pseudoY[,discreteDims] = E.Z(parameters)
     
     parameters$b = parameters$b0 + 0.5 *E.Lambda2(parameters)
     
@@ -189,7 +173,6 @@ CAVI <- function(Y, discreteDims=c() ,maxiterations=1000L, tol = 0.1, seed=NULL)
     }
   }
   
-  
   varimaxLambda = varimax(parameters$M.Lambda)$loadings[1:parameters$D,]
   return( list(Lambda=varimaxLambda, ELBO=ELBOvec) )}
 
@@ -199,7 +182,7 @@ repeats=100
 results = vector(mode = "list", length = repeats)
 ELBOlast = numeric(repeats)
 for (i in 1:repeats){
-  results[[i]] = CAVI(Y, tol=0.01, seed = 1908+i)
+  results[[i]] = CAVI(Y, discreteDims = discreteDims, tol=0.1, seed = 1908+i)
   ELBOlast[i] = results[[i]]$ELBO[length(results[[i]]$ELBO)]
   print(i/repeats)
 }

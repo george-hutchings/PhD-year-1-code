@@ -6,7 +6,7 @@ if (!require("pacman")) {
 pacman::p_load(MASS)
 
 # Generate Data
-N = 100L
+N = 1000L
 D = 10L
 K = 3L
 Lambda = matrix(0L, D, K)#DxK
@@ -55,10 +55,12 @@ CAVI <- function(Y, maxiterations=1000L, tol = 0.1, seed=NULL){
     crossprod(parameters$M.Lambda) + rowSums(parameters$S.Lambda,dims=2L)
   }
   
+  #checked 
   E.A <- function(parameters) {
     parameters$alpha / parameters$beta
   }
   
+  #checked
   E.LambdaTALambda <-function(parameters){
     m = parameters$S.Lambda
     tempE.A = E.A(parameters)
@@ -71,9 +73,11 @@ CAVI <- function(Y, maxiterations=1000L, tol = 0.1, seed=NULL){
   E.Lambda2 <-function(parameters){
     (parameters$M.Lambda**2) + t(apply(parameters$S.Lambda, 3L, diag))
   }
+  #checked
   E.Eta<- function(parameters){
     parameters$M.Eta
   }
+  #checked
   E.EtaTEta <- function(parameters) {
     crossprod(parameters$M.Eta) + parameters$N*parameters$S.Eta
   }
@@ -101,35 +105,35 @@ CAVI <- function(Y, maxiterations=1000L, tol = 0.1, seed=NULL){
   }
   
   # Loop for performing CAVI, until ELBO - mean(ELBO) is < tol for 5 iterations
-  ELBOvec = numeric(maxiterations)
+  ELBOvec = c(1:maxiterations) #numeric(maxiterations)
   for (iter in 1:maxiterations){
     EA = E.A(parameters)
     
-    parameters$S.Eta = solve(E.LambdaTALambda(parameters) + diag(1,parameters$K,parameters$K)) # The same for each observation
-    parameters$M.Eta = tcrossprod(Y, tcrossprod(parameters$S.Eta,E.Lambda(parameters)*EA))
+    parameters$S.Eta = solve(E.LambdaTALambda(parameters) + diag(1,parameters$K,parameters$K)) # The same for each observation #checked
+    parameters$M.Eta = tcrossprod(Y, tcrossprod(parameters$S.Eta, E.Lambda(parameters)*EA)) #checked
     
-    
+
     
     ETau = E.Tau(parameters)
     EEtaTEta = E.EtaTEta(parameters)
     for (i in 1:parameters$D){
       parameters$S.Lambda[,,i] = solve((EA[i]*EEtaTEta) + diag(ETau[i,]))
-      print(parameters$S.Lambda[,,i])
       parameters$M.Lambda[i,] = parameters$S.Lambda[,,i]%*%(crossprod(parameters$M.Eta,Y[,i]))*EA[i]
     }
     
-    parameters$b = parameters$b0 + 0.5*E.Lambda2(parameters)
+    parameters$b = parameters$b0 + 0.5*E.Lambda2(parameters) #todo: this is producing negative betas
+    stopifnot(all(E.Lambda2(parameters)>0))
     
-    trASigma = sum(diag(EEtaTEta)%*%parameters$S.Eta)
+    #trEEtaTEtaSigma = sum(diag(EEtaTEta%*%parameters$S.Lambda[,,j]))
     for (j in 1:parameters$D){
-      parameters$beta[j] =  sum(Y[,j]**2) - 
-        2*(Y[,j]%*%parameters$M.Eta)%*%parameters$M.Lambda[j,]
-      + trASigma + crossprod(parameters$M.Lambda[j,], EEtaTEta%*%parameters$M.Lambda[j,])
+      parameters$beta[j] =  sum(Y[,j]**2) 
+      - 2*(Y[,j]%*%parameters$M.Eta)%*%parameters$M.Lambda[j,]
+      + sum(diag(EEtaTEta%*%parameters$S.Lambda[,,j])) + crossprod(parameters$M.Lambda[j,], EEtaTEta%*%parameters$M.Lambda[j,])
     }
     parameters$beta = parameters$beta0 + 0.5*parameters$beta
     
     
-    ELBOvec[iter] = ELBO(parameters)
+    # ELBOvec[iter] = ELBO(parameters) #UNCOMMENT TO IMPLEMENT ELBO
     if (iter>5){
       val = ELBOvec[(iter-5):iter]
       if (all(abs(val - mean(val))<tol)){ 
@@ -148,7 +152,7 @@ repeats=100
 results = vector(mode = "list", length = repeats)
 ELBOlast = numeric(repeats)
 for (i in 1:repeats){
-  results[[i]] = CAVI(Y, tol=0.01, seed = 1908+i)
+  results[[i]] = CAVI(Y, tol=0.01, seed = 1908+i, maxiterations = 100)
   ELBOlast[i] = results[[i]]$ELBO[length(results[[i]]$ELBO)]
   print(i/repeats)
 }

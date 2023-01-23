@@ -6,7 +6,7 @@ if (!require("pacman")) {
 pacman::p_load(MASS)
 
 # Generate Data
-N = 1000L
+N = 2000L
 D = 10L
 K = 3L
 Lambda = matrix(0L, D, K)#DxK
@@ -39,12 +39,12 @@ CAVI <- function(Y, maxiterations=1000L, tol = 0.1, seed=NULL){
   parameters$S.Eta =  rWishart(parameters$D, parameters$K, diag(1/parameters$K,parameters$K))[,,1] #the same for each observation
   
   ## Initialise b parameters (a does not change)
-  parameters$b = matrix(rgamma(parameters$D*parameters$K, shape=2, rate= 1/parameters$b0), nrow=parameters$D, ncol=parameters$K) 
   parameters$a = parameters$a0 + 0.5
+  parameters$b = matrix(rgamma(parameters$D*parameters$K, shape=2, rate= 1/parameters$alpha), nrow=parameters$D, ncol=parameters$K) 
   
   ## Initialise beta parameters (alpha does not change)
-  parameters$beta = rgamma(parameters$D, shape=2, rate= 1/parameters$b0)
   parameters$alpha = parameters$a0 + 0.5*parameters$N
+  parameters$beta = rgamma(parameters$D, shape=2, rate= 1/parameters$alpha)
   
   
   # Functions for calculating expectations
@@ -142,17 +142,18 @@ CAVI <- function(Y, maxiterations=1000L, tol = 0.1, seed=NULL){
     }
   }
   
+  print(E.A(parameters))
   
   varimaxLambda = varimax(parameters$M.Lambda)$loadings[1:parameters$D,]
   return( list(Lambda=varimaxLambda, ELBO=ELBOvec) )}
 
 
 # Perform CAVI on data repeats times (with random initialisations)
-repeats=100
+repeats=5
 results = vector(mode = "list", length = repeats)
 ELBOlast = numeric(repeats)
 for (i in 1:repeats){
-  results[[i]] = CAVI(Y, tol=0.01, seed = 1908+i, maxiterations = 100)
+  results[[i]] = CAVI(Y, tol=0.01, seed = 1908+i, maxiterations = 1000)
   ELBOlast[i] = results[[i]]$ELBO[length(results[[i]]$ELBO)]
   print(i/repeats)
 }
@@ -166,7 +167,7 @@ for (j in sample(temp[-idx], 4)){
 print(ELBOlast[idx])
 VILambda = results[[idx]]$Lambda
 print(Lambda)
-print(round(VILambda,1))
+print(round(VILambda,5))
 
 
 # TODO sometimes ELBO is nonincreasing

@@ -6,7 +6,7 @@ if (!require("pacman")) {
 pacman::p_load(MASS, pracma, RColorBrewer, truncnorm)
 
 ## Generate Data
-N = 1000L
+N = 2000L
 D = 10L
 K = 3L
 Lambda = matrix(0L, D, K)#DxK
@@ -16,8 +16,8 @@ Lambda[10, 3] = 3L #TODO doesnt work if this is small (eg 1)
 Y = mvrnorm(N, rep(0L, D) , tcrossprod(Lambda) + diag(1L,D))
 
 # Convert dimensions to discrete
-discreteDims = c(2L, ncol(Y))
-groups = list(c(0.1,0.1,0.5,0.3), c(0.1,0.4,0.2,0.2,0.1)) # ith element is probability of being in group i 
+discreteDims = c(1:10)
+groups = list(c(0.1,0.1,0.5,0.3), c(0.1,0.4,0.2,0.2,0.1), c(0.5,0.5), c(0.5,0.5), c(0.5,0.5), c(0.5,0.5), c(0.5,0.5), c(0.5,0.5), c(0.5,0.5), c(0.5,0.5))# ith element is probability of being in group i 
 MakeDiscrete <- function(Y, discreteDims, groups, doplot=TRUE){
   discreteY = sapply(1:length(discreteDims), function(i) stepfun(cumsum(groups[[i]]), 1:(length(groups[[i]])+1L))( pnorm(scale(Y[, discreteDims[i]])) ) )
   Y[,discreteDims] = discreteY
@@ -196,4 +196,4 @@ for (j in sample(temp[-idx], 4)){
 print(ELBOlast[idx])
 VILambda = results[[idx]]$Lambda
 print(Lambda)
-print(round(VILambda,1))
+print(round(VILambda,3))

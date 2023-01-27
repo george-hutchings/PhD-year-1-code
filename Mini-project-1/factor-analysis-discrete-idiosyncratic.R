@@ -6,7 +6,7 @@ if (!require("pacman")) {
 pacman::p_load(MASS, pracma, RColorBrewer, truncnorm)
 
 ## Generate Data
-N = 5000L
+N = 2000L
 D = 10L
 K = 3L
 Lambda = matrix(0L, D, K)#DxK
@@ -33,6 +33,7 @@ CAVI <- function(Y, discreteDims=c(), maxiterations=1000L, tol = 0.1, seed=NULL)
   parameters$D = ncol(Y)
   parameters$K = K
   parameters$a0 = parameters$b0 = 1e-3
+  parameters$alpha0 = parameters$beta0 = 1e-3
   
   parameters$NdiscreteDims = length(discreteDims)
   
@@ -92,13 +93,26 @@ CAVI <- function(Y, discreteDims=c(), maxiterations=1000L, tol = 0.1, seed=NULL)
   parameters$b = matrix(rgamma(parameters$D*parameters$K, shape=2, rate= 1/parameters$b0), nrow=parameters$D, ncol=parameters$K) 
   parameters$a = parameters$a0 + 1/2
   
+  ## Initialise beta parameters (alpha does not change)
+  parameters$alpha = parameters$alpha0 + 0.5*parameters$N
+  parameters$beta = rgamma(parameters$D, shape=parameters$alpha, rate= 1/diag(var(parameters$pseudoY)))
+  
   
   # Functions for calculating expectations
   E.Lambda <- function(parameters){
     parameters$M.Lambda
   }
-  E.LambdaTLambda <- function(parameters) {
-    crossprod(parameters$M.Lambda) + rowSums(parameters$S.Lambda,dims=2L)
+  E.LambdaTHLambda <-function(parameters){
+    m = parameters$S.Lambda
+    tempE.H = E.H(parameters)
+    for (i in 1:parameters$D){
+      m[,,i] = parameters$S.Lambda[,,i]*tempE.H[i]
+    }
+    crossprod(parameters$M.Lambda*tempE.H, parameters$M.Lambda) + rowSums(m, dims=2L)
+  }
+  
+  E.H <- function(parameters) {
+    parameters$alpha / parameters$beta
   }
   E.Lambda2 <-function(parameters){
     (parameters$M.Lambda**2) + t(apply(parameters$S.Lambda, 3L, diag))
@@ -114,19 +128,28 @@ CAVI <- function(Y, discreteDims=c(), maxiterations=1000L, tol = 0.1, seed=NULL)
   }
   
   E.Z <- function(parameters){
+    tmpEH = E.H(parameters)
     sapply(1:parameters$NdiscreteDims, 
            function(i) etruncnorm(a=parameters$Zboundaries[[i]][Y[,discreteDims[i]], ][,1],
                                   b=parameters$Zboundaries[[i]][Y[,discreteDims[i]], ][,2], 
-                                  mean=parameters$M.Z[,i]))
+                                  mean=parameters$M.Z[,i], sd = 1/sqrt( tmpEH[discreteDims[i]] )))
+  }
+  
+  S.Z <- function(parameters){
+    tmpEH = E.H(parameters)
+    sapply(1:parameters$NdiscreteDims, 
+           function(i) vtruncnorm(a=parameters$Zboundaries[[i]][Y[,discreteDims[i]], ][,1],
+                                  b=parameters$Zboundaries[[i]][Y[,discreteDims[i]], ][,2], 
+                                  mean=parameters$M.Z[,i], sd = 1/sqrt( tmpEH[discreteDims[i]] )))
   }
  
   
   ## Function for calculating ELBO TODO: check it
   ELBO <- function(parameters){
     pt1 = numeric(4)
-    pt1[1] = -0.5*(parameters$N*sum(diag(E.LambdaTLambda(parameters)%*%parameters$S.Eta)) + 
+    pt1[1] = -0.5*(parameters$N*sum(diag(E.LambdaTHLambda(parameters)%*%parameters$S.Eta)) + 
                      -2*sum((Y%*%parameters$M.Lambda)*parameters$M.Eta) + 
-                     sum((parameters$M.Eta%*%E.LambdaTLambda(parameters))*parameters$M.Eta))
+                     sum((parameters$M.Eta%*%E.LambdaTHLambda(parameters))*parameters$M.Eta))
     pt1[2] = -0.5*(sum(diag(parameters$S.Eta)) + sum(parameters$M.Eta**2))
     pt1[3] = -0.5*( sum(log(parameters$b)) + 
                       parameters$a*sum(t(apply(parameters$S.Lambda, 3L, diag))/parameters$b) +
@@ -143,28 +166,45 @@ CAVI <- function(Y, discreteDims=c(), maxiterations=1000L, tol = 0.1, seed=NULL)
   
   
   # Loop for performing CAVI, until ELBO - mean(ELBO) is < tol for 5 iterations
-  ELBOvec = numeric(maxiterations)
+  ELBOvec = c(1:maxiterations) #numeric(maxiterations)
   for (iter in 1:maxiterations){
-    parameters$S.Eta = solve(E.LambdaTLambda(parameters) + diag(1,parameters$K,parameters$K)) # The same for each observation
-    parameters$M.Eta = tcrossprod(parameters$pseudoY, tcrossprod(parameters$S.Eta, E.Lambda(parameters)))
+    EH = E.H(parameters)
+    
+    parameters$S.Eta = solve(E.LambdaTHLambda(parameters) + diag(1,parameters$K)) # The same for each observation
+    parameters$M.Eta = tcrossprod(parameters$pseudoY, tcrossprod(parameters$S.Eta, E.Lambda(parameters)*EH))
     
     
     ETau = E.Tau(parameters)
     EEtaTEta = E.EtaTEta(parameters)
     for (i in 1:parameters$D){
-      parameters$S.Lambda[,,i] = solve(EEtaTEta + diag(ETau[i,]))
-      parameters$M.Lambda[i,] = parameters$S.Lambda[,,i]%*%(crossprod(parameters$M.Eta,parameters$pseudoY[,i]))
-      if (i%in%discreteDims){
-      }
+      parameters$S.Lambda[,,i] = solve((EH[i]*EEtaTEta) + diag(ETau[i,]))
+      parameters$M.Lambda[i,] = parameters$S.Lambda[,,i]%*%(crossprod(parameters$M.Eta,parameters$pseudoY[,i]))*EH[i]
     }
     
     # update Z (pseudoY with discrete dimensions)
     parameters$M.Z = tcrossprod(parameters$M.Eta, parameters$M.Lambda[discreteDims,])
+    
+    stopifnot(any(is.finite(parameters$M.Z)))
     parameters$pseudoY[,discreteDims] = E.Z(parameters)
     
     parameters$b = parameters$b0 + 0.5 *E.Lambda2(parameters)
     
-    ELBOvec[iter] = ELBO(parameters)
+    varZ = S.Z(parameters)
+    for (j in 1:parameters$D){
+      tmpcond = (j==discreteDims)
+      if (any(tmpcond)) {
+        tmp = sum(varZ[, which(tmpcond)])
+      } else{
+       tmp = 0
+      }
+      parameters$beta[j] = tmp + sum(parameters$pseudoY[, j]**2)
+      - 2*(parameters$pseudoY[,j]%*%parameters$M.Eta)%*%parameters$M.Lambda[j,]
+      + sum(diag(EEtaTEta%*%parameters$S.Lambda[,,j])) + crossprod(parameters$M.Lambda[j,], EEtaTEta%*%parameters$M.Lambda[j,])
+    }
+    
+    parameters$beta = parameters$beta0 + 0.5*parameters$beta
+    
+    #ELBOvec[iter] = ELBO(parameters)
     if (iter>5){
       val = ELBOvec[(iter-5):iter]
       if (all(abs(val - mean(val))<tol)){ 
@@ -178,11 +218,11 @@ CAVI <- function(Y, discreteDims=c(), maxiterations=1000L, tol = 0.1, seed=NULL)
 
 
 # Perform CAVI on data repeats times (with random initialisations)
-repeats=10
+repeats=5
 results = vector(mode = "list", length = repeats)
 ELBOlast = numeric(repeats)
 for (i in 1:repeats){
-  results[[i]] = CAVI(Y, discreteDims = discreteDims, tol=0.1, seed = 1908+i)
+  results[[i]] = CAVI(Y, maxiterations= 100, discreteDims = discreteDims, tol=0.1, seed = 1908+i)
   ELBOlast[i] = results[[i]]$ELBO[length(results[[i]]$ELBO)]
   print(i/repeats)
 }

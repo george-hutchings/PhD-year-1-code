@@ -11,8 +11,8 @@ D = 10L
 K = 3L
 Lambda = matrix(0L, D, K)#DxK
 Lambda[1:4, 1] = 1L
-Lambda[5:9, 2] = 2L
-Lambda[10, 3] = 3L #TODO doesnt work if this is small (eg 1)
+Lambda[5:7, 2] = 1L
+Lambda[8:10, 3] = 1L #TODO doesnt work if this is small (eg 1)
 Y = mvrnorm(N, rep(0L, D) , tcrossprod(Lambda) + diag(1L,D))
 
 # Convert dimensions to discrete
@@ -35,7 +35,6 @@ CAVI <- function(Y, discreteDims=c(), maxiterations=1000L, tol = 0.1, seed=NULL)
   parameters$a0 = parameters$b0 = 1e-3
   
   parameters$NdiscreteDims = length(discreteDims)
-  
   parameters$empericalCDFs = apply(Y[,discreteDims], 2L, ecdf)
   
   # # seems no point to do this?
@@ -46,6 +45,7 @@ CAVI <- function(Y, discreteDims=c(), maxiterations=1000L, tol = 0.1, seed=NULL)
   # plot(scale(Y[,discreteDims[i]])[,1])
   
   boundaries = function(x){
+  #assumes that classes are 1,...,n and all non empty
     toFind = 1L
     counts = c(0)
     count = sum(x == toFind)
@@ -89,8 +89,8 @@ CAVI <- function(Y, discreteDims=c(), maxiterations=1000L, tol = 0.1, seed=NULL)
   parameters$S.Eta =  rWishart(parameters$D, parameters$K, diag(1/parameters$K,parameters$K))[,,1] #the same for each observation
   
   ## Initialise b parameters (a does not change)
-  parameters$b = matrix(rgamma(parameters$D*parameters$K, shape=2, rate= 1/parameters$b0), nrow=parameters$D, ncol=parameters$K) 
-  parameters$a = parameters$a0 + 1/2
+  parameters$b = matrix(rgamma(parameters$D*parameters$K, shape=2, rate= 1/parameters$a), nrow=parameters$D, ncol=parameters$K) 
+  parameters$a = parameters$a0 + 0.5
   
   
   # Functions for calculating expectations
@@ -113,6 +113,7 @@ CAVI <- function(Y, discreteDims=c(), maxiterations=1000L, tol = 0.1, seed=NULL)
     parameters$a / parameters$b
   }
   
+  #check
   E.Z <- function(parameters){
     sapply(1:parameters$NdiscreteDims, 
            function(i) etruncnorm(a=parameters$Zboundaries[[i]][Y[,discreteDims[i]], ][,1],
@@ -143,7 +144,7 @@ CAVI <- function(Y, discreteDims=c(), maxiterations=1000L, tol = 0.1, seed=NULL)
   
   
   # Loop for performing CAVI, until ELBO - mean(ELBO) is < tol for 5 iterations
-  ELBOvec = numeric(maxiterations)
+  ELBOvec = c(1:maxiterations) #numeric(maxiterations)
   for (iter in 1:maxiterations){
     parameters$S.Eta = solve(E.LambdaTLambda(parameters) + diag(1,parameters$K,parameters$K)) # The same for each observation
     parameters$M.Eta = tcrossprod(parameters$pseudoY, tcrossprod(parameters$S.Eta, E.Lambda(parameters)))
@@ -157,14 +158,15 @@ CAVI <- function(Y, discreteDims=c(), maxiterations=1000L, tol = 0.1, seed=NULL)
       if (i%in%discreteDims){
       }
     }
+    #print(parameters$M.Lambda)
     
     # update Z (pseudoY with discrete dimensions)
     parameters$M.Z = tcrossprod(parameters$M.Eta, parameters$M.Lambda[discreteDims,])
     parameters$pseudoY[,discreteDims] = E.Z(parameters)
     
-    parameters$b = parameters$b0 + 0.5 *E.Lambda2(parameters)
+    parameters$b = parameters$b0 + 0.5*E.Lambda2(parameters)
     
-    ELBOvec[iter] = ELBO(parameters)
+    #ELBOvec[iter] = ELBO(parameters)
     if (iter>5){
       val = ELBOvec[(iter-5):iter]
       if (all(abs(val - mean(val))<tol)){ 
@@ -178,11 +180,11 @@ CAVI <- function(Y, discreteDims=c(), maxiterations=1000L, tol = 0.1, seed=NULL)
 
 
 # Perform CAVI on data repeats times (with random initialisations)
-repeats=10
+repeats=5
 results = vector(mode = "list", length = repeats)
 ELBOlast = numeric(repeats)
 for (i in 1:repeats){
-  results[[i]] = CAVI(Y, discreteDims = discreteDims, tol=0.1, seed = 1908+i)
+  results[[i]] = CAVI(Y,maxiterations = 100, discreteDims = discreteDims, tol=0.1, seed = 1908+i)
   ELBOlast[i] = results[[i]]$ELBO[length(results[[i]]$ELBO)]
   print(i/repeats)
 }
@@ -197,3 +199,5 @@ print(ELBOlast[idx])
 VILambda = results[[idx]]$Lambda
 print(Lambda)
 print(round(VILambda,3))
+
+for (i in 1:repeats){print(round(results[[i]]$Lambda,2))}

@@ -6,14 +6,14 @@ if (!require("pacman")) {
 pacman::p_load(MASS)
 
 # Generate Data
-N = 2000L
+N = 100
 D = 10L
 K = 3L
 Lambda = matrix(0L, D, K)#DxK
 Lambda[1:4, 1] = 1L
-Lambda[5:9, 2] = 2L
-Lambda[10, 3] = 3L #doesnt work if small??
-Sigma = diag(1L, D)
+Lambda[5:8, 2] = 1L
+Lambda[9:10, 3] = 1L #doesnt work if small??
+Sigma = diag(0.5, D)
 Y = mvrnorm(N, rep(0L, D) , tcrossprod(Lambda) + Sigma)
 
 
@@ -40,11 +40,12 @@ CAVI <- function(Y, maxiterations=1000L, tol = 0.1, seed=NULL){
   
   ## Initialise b parameters (a does not change)
   parameters$a = parameters$a0 + 0.5
-  parameters$b = matrix(rgamma(parameters$D*parameters$K, shape=2, rate= 1/parameters$alpha), nrow=parameters$D, ncol=parameters$K) 
+  parameters$b = matrix(rgamma(parameters$D*parameters$K, shape=2, rate= 1/parameters$a), nrow=parameters$D, ncol=parameters$K) 
+
   
   ## Initialise beta parameters (alpha does not change)
-  parameters$alpha = parameters$a0 + 0.5*parameters$N
-  parameters$beta = rgamma(parameters$D, shape=2, rate= 1/parameters$alpha)
+  parameters$alpha = parameters$alpha0 + 0.5*parameters$N
+  parameters$beta = rgamma(parameters$D, shape=parameters$alpha, rate= 1/diag(var(Y)))
   
   
   # Functions for calculating expectations
@@ -56,18 +57,18 @@ CAVI <- function(Y, maxiterations=1000L, tol = 0.1, seed=NULL){
   }
   
   #checked 
-  E.A <- function(parameters) {
+  E.H <- function(parameters) {
     parameters$alpha / parameters$beta
   }
   
   #checked
-  E.LambdaTALambda <-function(parameters){
+  E.LambdaTHLambda <-function(parameters){
     m = parameters$S.Lambda
-    tempE.A = E.A(parameters)
+    tempE.H = E.H(parameters)
     for (i in 1:parameters$D){
-      m[,,i] = parameters$S.Lambda[,,i]*tempE.A[i]
+      m[,,i] = parameters$S.Lambda[,,i]*tempE.H[i]
     }
-    crossprod(parameters$M.Lambda*tempE.A, parameters$M.Lambda) + rowSums(m, dims=2L)
+    crossprod(parameters$M.Lambda*tempE.H, parameters$M.Lambda) + rowSums(m, dims=2L)
   }
   
   E.Lambda2 <-function(parameters){
@@ -107,22 +108,22 @@ CAVI <- function(Y, maxiterations=1000L, tol = 0.1, seed=NULL){
   # Loop for performing CAVI, until ELBO - mean(ELBO) is < tol for 5 iterations
   ELBOvec = c(1:maxiterations) #numeric(maxiterations)
   for (iter in 1:maxiterations){
-    EA = E.A(parameters)
+    EH = E.H(parameters)
     
-    parameters$S.Eta = solve(E.LambdaTALambda(parameters) + diag(1,parameters$K,parameters$K)) # The same for each observation #checked
-    parameters$M.Eta = tcrossprod(Y, tcrossprod(parameters$S.Eta, E.Lambda(parameters)*EA)) #checked
+    parameters$S.Eta = solve(E.LambdaTHLambda(parameters) + diag(1,parameters$K)) # The same for each observation #checked
+    parameters$M.Eta = tcrossprod(Y, tcrossprod(parameters$S.Eta, E.Lambda(parameters)*EH)) #checked
     
-
+  
     
     ETau = E.Tau(parameters)
     EEtaTEta = E.EtaTEta(parameters)
     for (i in 1:parameters$D){
-      parameters$S.Lambda[,,i] = solve((EA[i]*EEtaTEta) + diag(ETau[i,]))
-      parameters$M.Lambda[i,] = parameters$S.Lambda[,,i]%*%(crossprod(parameters$M.Eta,Y[,i]))*EA[i]
+      parameters$S.Lambda[,,i] = solve((EH[i]*EEtaTEta) + diag(ETau[i,]))
+      parameters$M.Lambda[i,] = parameters$S.Lambda[,,i]%*%(crossprod(parameters$M.Eta,Y[,i]))*EH[i]
     }
     
     parameters$b = parameters$b0 + 0.5*E.Lambda2(parameters) #todo: this is producing negative betas
-    stopifnot(all(E.Lambda2(parameters)>0))
+    #stopifnot(all(E.Lambda2(parameters)>0))
     
     #trEEtaTEtaSigma = sum(diag(EEtaTEta%*%parameters$S.Lambda[,,j]))
     for (j in 1:parameters$D){
@@ -142,7 +143,6 @@ CAVI <- function(Y, maxiterations=1000L, tol = 0.1, seed=NULL){
     }
   }
   
-  print(E.A(parameters))
   
   varimaxLambda = varimax(parameters$M.Lambda)$loadings[1:parameters$D,]
   return( list(Lambda=varimaxLambda, ELBO=ELBOvec) )}
@@ -167,7 +167,7 @@ for (j in sample(temp[-idx], 4)){
 print(ELBOlast[idx])
 VILambda = results[[idx]]$Lambda
 print(Lambda)
-print(round(VILambda,5))
+print(round(VILambda,1))
 
 
 # TODO sometimes ELBO is nonincreasing

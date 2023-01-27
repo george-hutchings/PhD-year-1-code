@@ -6,13 +6,13 @@ if (!require("pacman")) {
 pacman::p_load(MASS)
 
 # Generate Data
-N = 2000L
+N = 1000L
 D = 10L
 K = 3L
 Lambda = matrix(0L, D, K)#DxK
 Lambda[1:4, 1] = 1L
 Lambda[5:8, 2] = 1L
-Lambda[8:10, 3] = 1L #doesnt work if small??
+Lambda[9:10, 3] = 1L #doesnt work if small??
 Sigma = diag(0.5, D)
 Y = mvrnorm(N, rep(0L, D) , tcrossprod(Lambda) + Sigma)
 
@@ -39,14 +39,20 @@ CAVI <- function(Y, maxiterations=1000L, tol = 0.1, seed=NULL){
   parameters$S.Eta =  rWishart(parameters$D, parameters$K, diag(1/parameters$K,parameters$K))[,,1] #the same for each observation
   
   ## Initialise b parameters (a does not change)
-  parameters$b = rgamma(parameters$K, shape=2, rate= 1/parameters$b0)
   parameters$a = parameters$a0 + (0.5*parameters$D)
+  parameters$b = rgamma(parameters$K, shape=2, rate= 1/parameters$b0)
   
   ## Initialise beta parameters (alpha does not change)
-  parameters$alpha = parameters$a0 + 0.5*parameters$N
-  
+  parameters$alpha = parameters$alpha0 + 0.5*parameters$N
   parameters$beta = rgamma(parameters$D, shape=parameters$alpha, rate= 1/diag(var(Y)))
   #parameters$beta = rep(parameters$alpha *0.5, parameters$D)
+  
+
+
+  # parameters$b = rep(parameters$a , parameters$K)
+  # parameters$S.Lambda = array(0, c(parameters$K,parameters$K, parameters$D))
+  # for(i in 1:parameters$D){parameters$S.Lambda[,,i]=diag(parameters$K)} 
+  # parameters$beta = rep(parameters$alpha0 + 0.5*parameters$N, parameters$D)
   
   
   # Functions for calculating expectations
@@ -144,7 +150,7 @@ CAVI <- function(Y, maxiterations=1000L, tol = 0.1, seed=NULL){
     }
   }
   
-  print(E.H(parameters))
+  
   
   varimaxLambda = varimax(parameters$M.Lambda)$loadings[1:parameters$D,]
   return( list(Lambda=varimaxLambda, ELBO=ELBOvec) )}

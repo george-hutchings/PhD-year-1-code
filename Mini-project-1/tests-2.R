@@ -40,7 +40,7 @@ E_step_lambda<-function(Y,M,omega,Ealpha,sigma_k){
 
 
 
-n=1000L
+n=100L
 k      = 4
 p      = 8# = d
 #B_kT   = matrix(c(0.9078809,0,0, 0, 0.6828301, 0.7861421, 0, 0, 0, 0,0.8, 0.0, 0.0, 0.0 ,0.0,0.0, 0,1,0,0,0,0,0,0,0.7,0, 0, 0.7, 0, 0, 0.651872, 0.85 ),p,k)
@@ -52,7 +52,6 @@ Y      = muT+matrix(rnorm(n*p,0,.5),n,p)
 
 # initialise eta, Lambda
 omega   = matrix(rnorm(n*k),n,k)
-B_k     = matrix(rnorm(p*k),p,k)
 conv=TRUE #whether or not converged 
 iter=0
 Ealpha = diag(k)
@@ -76,7 +75,7 @@ while (conv) {
   B_new   <- E_step2$B_new
   B_sigma <- E_step2$B_sigma
   
-  Alpha     <- .5*(diag(t(B_new)%*%B_k+apply(B_sigma,1:2,sum)))+b0
+  Alpha     <- .5*(diag(t(B_new)%*%B_new+apply(B_sigma,1:2,sum)))+b0
   Ealpha    <-diag((alpha0+p/2)/Alpha)
   
   mm        <-omega%*%t(B_new)
@@ -86,7 +85,7 @@ while (conv) {
     for (j in 1:n) {
       E_FF = omega[j,]%*%t(omega[j,])+M
       tmp = tmp + Y[j,i]^2-2*Y[j,i]*mm[j,i]+sum(diag(E_BB%*%E_FF))
-    }
+    } #different last term??
     sigma_k[i] = (alpha0+n/2)/(.5*tmp+b0)
   }
   

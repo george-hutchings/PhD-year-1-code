@@ -13,7 +13,8 @@ Lambda = matrix(0L, D, K)#DxK
 Lambda[1:4, 1] = 1L
 Lambda[5:7, 2] = 1L
 Lambda[8:10, 3] = 1L #TODO doesnt work if this is small (eg 1)
-Y = mvrnorm(N, rep(0L, D) , tcrossprod(Lambda) + diag(1L,D))
+Sigma = diag(1L,D)
+Y = mvrnorm(N, rep(0L, D) , tcrossprod(Lambda) + Sigma)
 
 # Convert dimensions to discrete
 discreteDims = c(1:10)
@@ -89,8 +90,9 @@ CAVI <- function(Y, discreteDims=c(), maxiterations=1000L, tol = 0.1, seed=NULL)
   parameters$S.Eta =  rWishart(parameters$D, parameters$K, diag(1/parameters$K,parameters$K))[,,1] #the same for each observation
   
   ## Initialise b parameters (a does not change)
-  parameters$b = matrix(rgamma(parameters$D*parameters$K, shape=2, rate= 1/parameters$a), nrow=parameters$D, ncol=parameters$K) 
   parameters$a = parameters$a0 + 0.5
+  parameters$b = matrix(rgamma(parameters$D*parameters$K, shape=2, rate= 1/parameters$a), nrow=parameters$D, ncol=parameters$K) 
+  
   
   
   # Functions for calculating expectations

@@ -6,14 +6,14 @@ if (!require("pacman")) {
 pacman::p_load(MASS)
 
 # Generate Data
-N = 1000L
+N = 5000L
 D = 10L
 K = 3L
 Lambda = matrix(0L, D, K)#DxK
 Lambda[1:4, 1] = 1L
 Lambda[5:8, 2] = 1L
 Lambda[9:10, 3] = 1L #doesnt work if small??
-Sigma = diag(0.5, D)
+Sigma = diag(2, D)
 Y = mvrnorm(N, rep(0L, D) , tcrossprod(Lambda) + Sigma)
 
 
@@ -29,8 +29,8 @@ CAVI <- function(Y, maxiterations=1000L, tol = 0.1, seed=NULL){
   
   ## Initialise Lambda parameters
   # Initialise mean of Lambda by PCA 
-  pY = prcomp(Y, scale=TRUE, rank=parameters$K)
-  parameters$M.Lambda = pY$rotation%*%diag(pY$sdev[1:parameters$K]**2) 
+  tmp = factanal(Y,parameters$K, scores = 'reg')
+  parameters$M.Lambda = unname(tmp$loadings[1:parameters$D,])
   #Initialised by Wishart distribution, last dimension refers to the vector the covariance matrix corresponds to 
   parameters$S.Lambda =  rWishart(parameters$D, parameters$K, diag(1/parameters$K,parameters$K)) 
   
@@ -39,20 +39,12 @@ CAVI <- function(Y, maxiterations=1000L, tol = 0.1, seed=NULL){
   parameters$S.Eta =  rWishart(parameters$D, parameters$K, diag(1/parameters$K,parameters$K))[,,1] #the same for each observation
   
   ## Initialise b parameters (a does not change)
-  parameters$a = parameters$a0 + (0.5*parameters$D)
-  parameters$b = rgamma(parameters$K, shape=2, rate= 1/parameters$b0)
+  parameters$a = parameters$a0 + 1/2
+  parameters$b = matrix(rgamma(parameters$D*parameters$K, shape=2, rate= 1/parameters$a), nrow=parameters$D, ncol=parameters$K) 
   
   ## Initialise beta parameters (alpha does not change)
   parameters$alpha = parameters$alpha0 + 0.5*parameters$N
-  parameters$beta = rgamma(parameters$D, shape=parameters$alpha, rate= 1/diag(var(Y)))
-  #parameters$beta = rep(parameters$alpha *0.5, parameters$D)
-  
-
-
-  # parameters$b = rep(parameters$a , parameters$K)
-  # parameters$S.Lambda = array(0, c(parameters$K,parameters$K, parameters$D))
-  # for(i in 1:parameters$D){parameters$S.Lambda[,,i]=diag(parameters$K)} 
-  # parameters$beta = rep(parameters$alpha0 + 0.5*parameters$N, parameters$D)
+  parameters$beta = parameters$alpha * (diag(var(Y))- diag(tcrossprod(parameters$M.Lambda)))
   
   
   # Functions for calculating expectations
@@ -124,7 +116,6 @@ CAVI <- function(Y, maxiterations=1000L, tol = 0.1, seed=NULL){
     parameters$M.Eta = tcrossprod(Y, tcrossprod(parameters$S.Eta, E.Lambda(parameters)*EH)) #checked
     
 
-    
     ETau = E.Tau(parameters)
     EEtaTEta = E.EtaTEta(parameters)
     for (i in 1:parameters$D){
@@ -150,7 +141,8 @@ CAVI <- function(Y, maxiterations=1000L, tol = 0.1, seed=NULL){
     }
   }
   
-  
+  print(round(varimax(parameters$M.Lambda)$loadings[1:parameters$D,],1))
+  print(1/EH)
   
   varimaxLambda = varimax(parameters$M.Lambda)$loadings[1:parameters$D,]
   return( list(Lambda=varimaxLambda, ELBO=ELBOvec) )}

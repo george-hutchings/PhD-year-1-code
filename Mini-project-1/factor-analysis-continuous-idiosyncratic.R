@@ -46,6 +46,7 @@ CAVI <- function(Y, maxiterations=1000L, tol = 0.1, seed=NULL){
   ## Initialise beta parameters (alpha does not change)
   parameters$alpha = parameters$alpha0 + 0.5*parameters$N
   parameters$beta = rgamma(parameters$D, shape=parameters$alpha, rate= 1/diag(var(Y)))
+  parameters$beta = rep(parameters$alpha * 0.5, parameters$D)
   
   
   # Functions for calculating expectations
@@ -128,7 +129,7 @@ CAVI <- function(Y, maxiterations=1000L, tol = 0.1, seed=NULL){
     #trEEtaTEtaSigma = sum(diag(EEtaTEta%*%parameters$S.Lambda[,,j]))
     for (j in 1:parameters$D){
       parameters$beta[j] =  sum(Y[,j]**2) 
-      - 2*(Y[,j]%*%parameters$M.Eta)%*%parameters$M.Lambda[j,]
+      - 2*crossprod(Y[,j]%*%parameters$M.Eta)%*%parameters$M.Lambda[j,]
       + sum(diag(EEtaTEta%*%parameters$S.Lambda[,,j])) + crossprod(parameters$M.Lambda[j,], EEtaTEta%*%parameters$M.Lambda[j,])
     }
     parameters$beta = parameters$beta0 + 0.5*parameters$beta
@@ -145,7 +146,7 @@ CAVI <- function(Y, maxiterations=1000L, tol = 0.1, seed=NULL){
   
   
   varimaxLambda = varimax(parameters$M.Lambda)$loadings[1:parameters$D,]
-  return( list(Lambda=varimaxLambda, ELBO=ELBOvec) )}
+  return( list(Lambda=varimaxLambda, ELBO=ELBOvec, Noisevar = 1/E.H(parameters)) )}
 
 
 # Perform CAVI on data repeats times (with random initialisations)
@@ -161,17 +162,13 @@ for (i in 1:repeats){
 idx = which.max(ELBOlast)
 plot(results[[idx]]$ELBO, type='o', col='red', xlab = 'Iteration', ylab= 'ELBO')
 temp = c(1:repeats)
-for (j in sample(temp[-idx], 4)){
-  lines(results[[j]]$ELBO)
+for (i in 1:repeats){
+  print(round(results[[i]]$Lambda,2))
+  print(round(results[[i]]$Noisevar,2))
 }
-print(ELBOlast[idx])
-VILambda = results[[idx]]$Lambda
-print(Lambda)
-print(round(VILambda,1))
+# print(ELBOlast[idx])
+# VILambda = results[[idx]]$Lambda
+# print(Lambda)
+# print(round(VILambda,1))
 
-
-# TODO sometimes ELBO is nonincreasing
-# nonIncreasingELBOidx = which(sapply(results, function(x) is.unsorted(x$ELBO)))
-# plot(results[[nonIncreasingELBOidx[1]]]$ELBO)
-# print(diff(results[[nonIncreasingELBOidx[1]]]$ELBO))
 

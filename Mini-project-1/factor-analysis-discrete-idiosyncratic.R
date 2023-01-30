@@ -6,14 +6,15 @@ if (!require("pacman")) {
 pacman::p_load(MASS, pracma, RColorBrewer, truncnorm)
 
 ## Generate Data
-N = 2000L
+N = 8000L
 D = 10L
 K = 3L
 Lambda = matrix(0L, D, K)#DxK
 Lambda[1:4, 1] = 1L
-Lambda[5:9, 2] = 2L
-Lambda[10, 3] = 3L #TODO doesnt work if this is small (eg 1)
-Y = mvrnorm(N, rep(0L, D) , tcrossprod(Lambda) + diag(1L,D))
+Lambda[5:8, 2] = 1L
+Lambda[9:10, 3] = 1L #TODO doesnt work if this is small (eg 1)
+Sigma = diag(0.5,D)
+Y = mvrnorm(N, rep(0L, D) , tcrossprod(Lambda) + Sigma)
 
 # Convert dimensions to discrete
 discreteDims = c(1:10)
@@ -69,7 +70,6 @@ CAVI <- function(Y, discreteDims=c(), maxiterations=1000L, tol = 0.1, seed=NULL)
   
   parameters$Zboundaries =  apply(Y[,discreteDims], 2L, boundaries, simplify=FALSE)
   parameters$M.Z = matrix(rnorm(parameters$N*parameters$NdiscreteDims), nrow=parameters$N, ncol=parameters$NdiscreteDims) #not the actual mean! only the mean in the truncated normal
-  #parameters$Zcov = diag(1L, nrow=parameters$N) #for each discrete dimension
   
   parameters$pseudoY = Y
   parameters$pseudoY[, discreteDims] = sapply(1:parameters$NdiscreteDims, 
@@ -77,11 +77,11 @@ CAVI <- function(Y, discreteDims=c(), maxiterations=1000L, tol = 0.1, seed=NULL)
                                       b=parameters$Zboundaries[[i]][Y[,discreteDims[i]], ][,2], 
                                       mean=parameters$M.Z[,i]))
   
-  
   ## Initialise Lambda parameters
   # Initialise mean of Lambda by PCA 
-  pY = prcomp(Y, scale=TRUE, rank=parameters$K)
-  parameters$M.Lambda = pY$rotation%*%diag(pY$sdev[1:parameters$K]**2) 
+  tmp = factanal(parameters$pseudoY, parameters$K, scores = 'reg')
+  parameters$M.Lambda = unname(tmp$loadings[1:parameters$D,])
+  tmp = tmp$scores
   #Initialised by Wishart distribution, last dimension refers to the vector the covariance matrix corresponds to 
   parameters$S.Lambda =  rWishart(parameters$D, parameters$K, diag(1/parameters$K,parameters$K)) 
   
@@ -96,6 +96,8 @@ CAVI <- function(Y, discreteDims=c(), maxiterations=1000L, tol = 0.1, seed=NULL)
   ## Initialise beta parameters (alpha does not change)
   parameters$alpha = parameters$alpha0 + 0.5*parameters$N
   parameters$beta = rgamma(parameters$D, shape=parameters$alpha, rate= 1/diag(var(parameters$pseudoY)))
+  parameters$beta= parameters$alpha/diag(cov(parameters$pseudoY -tcrossprod(tmp, parameters$M.Lambda)))
+  parameters$beta = rep(parameters$alpha, parameters$D)
   
   
   # Functions for calculating expectations
@@ -128,19 +130,17 @@ CAVI <- function(Y, discreteDims=c(), maxiterations=1000L, tol = 0.1, seed=NULL)
   }
   
   E.Z <- function(parameters){
-    tmpEH = E.H(parameters)
     sapply(1:parameters$NdiscreteDims, 
            function(i) etruncnorm(a=parameters$Zboundaries[[i]][Y[,discreteDims[i]], ][,1],
                                   b=parameters$Zboundaries[[i]][Y[,discreteDims[i]], ][,2], 
-                                  mean=parameters$M.Z[,i], sd = 1/sqrt( tmpEH[discreteDims[i]] )))
+                                  mean=parameters$M.Z[,i], sd = 1))
   }
   
   S.Z <- function(parameters){
-    tmpEH = E.H(parameters)
     sapply(1:parameters$NdiscreteDims, 
            function(i) vtruncnorm(a=parameters$Zboundaries[[i]][Y[,discreteDims[i]], ][,1],
                                   b=parameters$Zboundaries[[i]][Y[,discreteDims[i]], ][,2], 
-                                  mean=parameters$M.Z[,i], sd = 1/sqrt( tmpEH[discreteDims[i]] )))
+                                  mean=parameters$M.Z[,i], sd = 1))
   }
  
   
@@ -178,18 +178,16 @@ CAVI <- function(Y, discreteDims=c(), maxiterations=1000L, tol = 0.1, seed=NULL)
     EEtaTEta = E.EtaTEta(parameters)
     for (i in 1:parameters$D){
       parameters$S.Lambda[,,i] = solve((EH[i]*EEtaTEta) + diag(ETau[i,]))
-      parameters$M.Lambda[i,] = parameters$S.Lambda[,,i]%*%(crossprod(parameters$M.Eta,parameters$pseudoY[,i]))*EH[i]
+      parameters$M.Lambda[i,] = parameters$S.Lambda[,,i]%*%(crossprod(parameters$M.Eta, parameters$pseudoY[,i]))*EH[i]
     }
     
     # update Z (pseudoY with discrete dimensions)
     parameters$M.Z = tcrossprod(parameters$M.Eta, parameters$M.Lambda[discreteDims,])
-    
-    stopifnot(any(is.finite(parameters$M.Z)))
-    parameters$pseudoY[,discreteDims] = E.Z(parameters)
+    parameters$pseudoY[,discreteDims]   = E.Z(parameters) #=  t(t(E.Z(parameters))/sqrt(EH))
     
     parameters$b = parameters$b0 + 0.5 *E.Lambda2(parameters)
     
-    varZ = S.Z(parameters)
+    varZ = S.Z(parameters) #= t(t(S.Z(parameters))/EH)
     for (j in 1:parameters$D){
       tmpcond = (j==discreteDims)
       if (any(tmpcond)) {
@@ -198,7 +196,7 @@ CAVI <- function(Y, discreteDims=c(), maxiterations=1000L, tol = 0.1, seed=NULL)
        tmp = 0
       }
       parameters$beta[j] = tmp + sum(parameters$pseudoY[, j]**2)
-      - 2*(parameters$pseudoY[,j]%*%parameters$M.Eta)%*%parameters$M.Lambda[j,]
+      - 2*crossprod(parameters$pseudoY[,j],parameters$M.Eta)%*%parameters$M.Lambda[j,]
       + sum(diag(EEtaTEta%*%parameters$S.Lambda[,,j])) + crossprod(parameters$M.Lambda[j,], EEtaTEta%*%parameters$M.Lambda[j,])
     }
     
@@ -211,8 +209,10 @@ CAVI <- function(Y, discreteDims=c(), maxiterations=1000L, tol = 0.1, seed=NULL)
         ELBOvec = ELBOvec[1:iter]
         break }
     }
+    #print(parameters$M.Lambda)
+    #print(EH)
   }
-  
+  print(parameters$M.Lambda)
   varimaxLambda = varimax(parameters$M.Lambda)$loadings[1:parameters$D,]
   return( list(Lambda=varimaxLambda, ELBO=ELBOvec) )}
 
@@ -222,7 +222,7 @@ repeats=5
 results = vector(mode = "list", length = repeats)
 ELBOlast = numeric(repeats)
 for (i in 1:repeats){
-  results[[i]] = CAVI(Y, maxiterations= 100, discreteDims = discreteDims, tol=0.1, seed = 1908+i)
+  results[[i]] = CAVI(Y, maxiterations= 50, discreteDims = discreteDims, tol=0.1, seed = 1908+i)
   ELBOlast[i] = results[[i]]$ELBO[length(results[[i]]$ELBO)]
   print(i/repeats)
 }
@@ -233,7 +233,5 @@ temp = c(1:repeats)
 for (j in sample(temp[-idx], 4)){
   lines(results[[j]]$ELBO)
 }
-print(ELBOlast[idx])
-VILambda = results[[idx]]$Lambda
-print(Lambda)
-print(round(VILambda,3))
+
+for (i in 1:repeats){print(round(results[[i]]$Lambda,1))}

@@ -35,15 +35,7 @@ CAVI <- function(Y, discreteDims=c(), maxiterations=1000L, tol = 0.1, seed=NULL)
   parameters$a0 = parameters$b0 = 1e-3
   
   parameters$NdiscreteDims = length(discreteDims)
-  
-  parameters$empericalCDFs = apply(Y[,discreteDims], 2L, ecdf)
-  
-  # # seems no point to do this?
-  # foo = sapply(seq_len(parameters$NdiscreteDims), function(i) qnorm(parameters$empericalCDFs[[i]]((Y[,discreteDims[i]]))))
-  # i=1
-  # plot(Y[,discreteDims[i]])
-  # plot(foo[,i]) #inf not plotted
-  # plot(scale(Y[,discreteDims[i]])[,1])
+  #parameters$empericalCDFs = apply(Y[,discreteDims], 2L, ecdf)
   
   boundaries = function(x){
     toFind = 1L
@@ -197,3 +189,5 @@ print(ELBOlast[idx])
 VILambda = results[[idx]]$Lambda
 print(Lambda)
 print(round(VILambda,3))
+
+for (i in 1:repeats){print(round(results[[i]]$Lambda,1))}

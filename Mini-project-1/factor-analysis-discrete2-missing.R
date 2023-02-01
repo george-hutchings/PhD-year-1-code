@@ -6,18 +6,18 @@ if (!require("pacman")) {
 pacman::p_load(MASS, pracma, RColorBrewer, truncnorm)
 
 ## Generate Data
-N = 5000L
+N = 10000L
 D = 10L
 K = 3L
 Lambda = matrix(0L, D, K)#DxK
-Lambda[1:4, 1] = 1L
-Lambda[5:7, 2] = 1L
+Lambda[1:2, 1] = 1L
+Lambda[3:7, 2] = 1L
 Lambda[8:10, 3] = 1L #TODO doesnt work if this is small (eg 1)
 Sigma = diag(1L,D)
 Yfull = mvrnorm(N, rep(0L, D) , tcrossprod(Lambda) + Sigma)
 
 # Convert dimensions to discrete
-discreteDims = c(1:5)
+discreteDims = c(1:10)
 groups = list(c(0.1,0.1,0.5,0.3), c(0.1,0.4,0.2,0.2,0.1), c(0.5,0.5), c(0.5,0.5), c(0.5,0.5), c(0.5,0.5), c(0.5,0.5), c(0.5,0.5), c(0.5,0.5), c(0.5,0.5))# ith element is probability of being in group i 
 MakeDiscrete <- function(Y, discreteDims, groups, doplot=TRUE){
   discreteY = sapply(1:length(discreteDims), function(i) stepfun(cumsum(groups[[i]]), 1:(length(groups[[i]])+1L))( pnorm(scale(Y[, discreteDims[i]])) ) )
@@ -25,10 +25,13 @@ MakeDiscrete <- function(Y, discreteDims, groups, doplot=TRUE){
   Y
 }
 Yfull = MakeDiscrete(Yfull, discreteDims, groups)
-prob = 0.01 # probability of data begin missing
+prob = 0.05 # probability of data begin missing
 missingMask = matrix(rbinom(N*D,1,prob=prob), nrow=N)
-Yobs=Yfull
-Yobs[missingMask] = NA
+heatmap(missingMask, scale = "none", Rowv = NA, Colv = NA, col = c('white', 'black'), main = paste('p = ', prob))
+Y=Yfull
+Y[as.logical(missingMask)] = NA 
+
+
 
 CAVI <- function(Y, discreteDims=c(), maxiterations=1000L, tol = 0.1, seed=NULL){
   if (!is.null(seed)){set.seed(seed)}
@@ -39,14 +42,6 @@ CAVI <- function(Y, discreteDims=c(), maxiterations=1000L, tol = 0.1, seed=NULL)
   parameters$a0 = parameters$b0 = 1e-3
   
   parameters$NdiscreteDims = length(discreteDims)
-  parameters$empericalCDFs = apply(Y[,discreteDims], 2L, ecdf)
-  
-  # # seems no point to do this?
-  # foo = sapply(seq_len(parameters$NdiscreteDims), function(i) qnorm(parameters$empericalCDFs[[i]]((Y[,discreteDims[i]]))))
-  # i=1
-  # plot(Y[,discreteDims[i]])
-  # plot(foo[,i]) #inf not plotted
-  # plot(scale(Y[,discreteDims[i]])[,1])
   
   boundaries = function(x){
   #assumes that classes are 1,...,n and all non empty
@@ -66,22 +61,30 @@ CAVI <- function(Y, discreteDims=c(), maxiterations=1000L, tol = 0.1, seed=NULL)
       m[i,] = counts[i:(i+1L)]
     }
     m
+    rbind(m, c(-Inf, Inf))
   }
-  #Y[,discreteDims] = Y[,discreteDims] - (apply(Y[,discreteDims],2,min)-1L) #ensure starting 1L TODO: groups must be non empty and be 1,2,3,4....
-  parameters$Zboundaries =  apply(Yobs[,discreteDims], 2L, boundaries, simplify=FALSE)
-  
-  #initialise full Y
-  Y = Yobs
-  Ymu = colMeans(Y, na.rm=TRUE)
-  Ymu[discreteDims] = round(Ymu[discreteDims])
-  parameters$missingMask = is.na(Yobs)
-  for (d in 1:parameters$D){Y[missingMask[,d],d] = Ymu[d]}
   
   
+  parameters$Zboundaries =  apply(Y[,discreteDims], 2L, boundaries, simplify=FALSE)
   parameters$M.Z = matrix(rnorm(parameters$N*parameters$NdiscreteDims), nrow=parameters$N, ncol=parameters$NdiscreteDims) #not the actual mean! only the mean in the truncated normal
   #parameters$Zcov = diag(1L, nrow=parameters$N) #for each discrete dimension
   
+  parameters$missingMask = is.na(Y)
+  #calculate avg value for of each column, for initialisation
+  Ymu = colMeans(Y, na.rm=TRUE)
+  Ymu[discreteDims] = round(Ymu[discreteDims])
+  # creates another category for missing data in the discrete variables
+  for (i in 1:parameters$NdiscreteDims){
+    d = discreteDims[i]
+    Y[parameters$missingMask[,i], discreteDims[i]] =  max(Y[,discreteDims[i]], na.rm=TRUE)+ 1L
+  }
+  
   parameters$pseudoY = Y
+  #initialise missing values of pseudoY with their mean
+  for (d in 1:parameters$D){parameters$pseudoY[parameters$missingMask[,d],d] = Ymu[d]}
+  
+  
+  # making all continuous
   parameters$pseudoY[, discreteDims] = sapply(1:parameters$NdiscreteDims, 
                                       function(i) rtruncnorm(1, a=parameters$Zboundaries[[i]][Y[,discreteDims[i]], ][,1],
                                       b=parameters$Zboundaries[[i]][Y[,discreteDims[i]], ][,2], 
@@ -90,8 +93,7 @@ CAVI <- function(Y, discreteDims=c(), maxiterations=1000L, tol = 0.1, seed=NULL)
   
   ## Initialise Lambda parameters
   # Initialise mean of Lambda by PCA 
-  pY = prcomp(Y, scale=TRUE, rank=parameters$K)
-  parameters$M.Lambda = pY$rotation%*%diag(pY$sdev[1:parameters$K]**2) 
+  parameters$M.Lambda = unname(factanal(parameters$pseudoY, parameters$K)$loadings[1:parameters$D,])
   #Initialised by Wishart distribution, last dimension refers to the vector the covariance matrix corresponds to 
   parameters$S.Lambda =  rWishart(parameters$D, parameters$K, diag(1/parameters$K,parameters$K)) 
   
@@ -102,6 +104,7 @@ CAVI <- function(Y, discreteDims=c(), maxiterations=1000L, tol = 0.1, seed=NULL)
   ## Initialise b parameters (a does not change)
   parameters$a = parameters$a0 + 0.5
   parameters$b = matrix(rgamma(parameters$D*parameters$K, shape=2, rate= 1/parameters$a), nrow=parameters$D, ncol=parameters$K) 
+  parameters$b = matrix(parameters$a, nrow=parameters$D, ncol=parameters$K) 
   
   
   
@@ -170,7 +173,6 @@ CAVI <- function(Y, discreteDims=c(), maxiterations=1000L, tol = 0.1, seed=NULL)
       if (i%in%discreteDims){
       }
     }
-    #print(parameters$M.Lambda)
     
     # update Z (pseudoY with discrete dimensions)
     parameters$M.Z = tcrossprod(parameters$M.Eta, parameters$M.Lambda[discreteDims,])
@@ -185,6 +187,7 @@ CAVI <- function(Y, discreteDims=c(), maxiterations=1000L, tol = 0.1, seed=NULL)
         ELBOvec = ELBOvec[1:iter]
         break }
     }
+    #print(parameters$M.Lambda)
   }
   
   varimaxLambda = varimax(parameters$M.Lambda)$loadings[1:parameters$D,]
@@ -196,7 +199,7 @@ repeats=5
 results = vector(mode = "list", length = repeats)
 ELBOlast = numeric(repeats)
 for (i in 1:repeats){
-  results[[i]] = CAVI(Y,maxiterations = 100, discreteDims = discreteDims, tol=0.1, seed = 1908+i)
+  results[[i]] = CAVI(Y,maxiterations = 200, discreteDims = discreteDims, tol=0.1, seed = 1908+i)
   ELBOlast[i] = results[[i]]$ELBO[length(results[[i]]$ELBO)]
   print(i/repeats)
 }

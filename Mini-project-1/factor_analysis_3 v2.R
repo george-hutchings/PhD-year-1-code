@@ -13,6 +13,7 @@ Lambda = matrix(0L, D, K)#DxK
 Lambda[1:4, 1] = 1L
 Lambda[5:8, 2] = 1L
 Lambda[9:10, 3] = 1L #doesnt work if small??
+set.seed(1234)
 Y = mvrnorm(N, rep(0L, D) , tcrossprod(Lambda) + diag(1L,D))
 
 Eta = matrix(rnorm(N*K), nrow=N)

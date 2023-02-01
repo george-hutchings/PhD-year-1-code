@@ -6,13 +6,14 @@ if (!require("pacman")) {
 pacman::p_load(MASS)
 
 # Generate Data
-N = 100L
+N = 2000L
 D = 10L
 K = 3L
 Lambda = matrix(0L, D, K)#DxK
 Lambda[1:4, 1] = 1L
-Lambda[5:9, 2] = 2L
-Lambda[10, 3] = 3L #doesnt work if small??
+Lambda[5:8, 2] = 1L
+Lambda[9:10, 3] = 1L #doesnt work if small??
+set.seed(1234)
 Y = mvrnorm(N, rep(0L, D) , tcrossprod(Lambda) + diag(1L,D))
 
 
@@ -121,15 +122,24 @@ for (i in 1:repeats){
 }
 
 idx = which.max(ELBOlast)
-plot(results[[idx]]$ELBO, type='o', col='red', xlab = 'Iteration', ylab= 'ELBO')
+pdf(file= "figures/ELBOcontonly.pdf")
+plot(results[[idx]]$ELBO, type='o', col='red', xlab = 'Iteration', ylab= 'ELBO cont only')
+dev.off()
 temp = c(1:repeats)
 for (j in sample(temp[-idx], 4)){
   lines(results[[j]]$ELBO)
 }
 print(ELBOlast[idx])
 VILambda = results[[idx]]$Lambda
-print(Lambda)
-print(round(VILambda,1))
+R = diag(1,K)
+R[1,1]=-1
+VILambda = VILambda%*%R
+pdf(file= "figures/heatmap1contonly.pdf")
+heatmap(Lambda, scale='none', Rowv = NA, Colv =NA, main = 'True Lambda cont only')
+dev.off()
+pdf(file= "figures/heatmap2contonly.pdf")
+heatmap(VILambda, scale = 'none', Rowv = NA, Colv =NA, main='VI Lambda cont only')
+dev.off()
 
 
 # TODO sometimes ELBO is nonincreasing

@@ -4,7 +4,7 @@ if (!require("pacman")) {
   install.packages("pacman")
 }
 pacman::p_load(MASS, pracma, RColorBrewer, truncnorm)
-
+#setwd("/home/hutchings/Documents/PhD-year-1/PhD-year-1-code/Mini-project-1")
 # Generate Data
 N = 2000L
 D = 10L
@@ -14,7 +14,16 @@ Lambda[1:4, 1] = 1L
 Lambda[5:8, 2] = 1L
 Lambda[9:10, 3] = 1L #doesnt work if small??
 set.seed(1234)
-Yfull = mvrnorm(N, rep(0L, D) , tcrossprod(Lambda) + diag(1L,D))
+Eta = matrix(NA, N, K)
+Yfull = matrix(NA, N, D)
+Sigma = diag(1L,D)
+tmp = diag(1L,K)
+tmp2 = rep(0L, K)
+for (n in 1:N){
+  Eta[n,] = mvrnorm(1, tmp2, tmp)
+  Yfull[n,] = mvrnorm(1, Lambda%*%Eta[n,], Sigma)
+}
+#Yfull = mvrnorm(N, rep(0L, D) , tcrossprod(Lambda) + diag(1L,D))
 
 # Convert dimensions to discrete
 discreteDims = c(1,7,9)
@@ -29,7 +38,7 @@ prob = 0.1 # probability of data begin missing
 
 
 ## set msk=1,2,3 dependign on how much missing data required
-msk=3
+msk=2
 if (msk==1){
   missingMask = matrix(0, N,D)
 }else if (msk==2){
@@ -118,7 +127,6 @@ CAVI <- function(Y, discreteDims=c(), maxiterations=1000L, tol = 0.001, seed=NUL
   
   ## Initialise b parameters (a does not change)
   parameters$a = parameters$a0 + 0.5
-  parameters$b = matrix(rgamma(parameters$D*parameters$K, shape=2, rate= 1/parameters$a), nrow=parameters$D, ncol=parameters$K) 
   parameters$b = matrix(parameters$a, nrow=parameters$D, ncol=parameters$K) 
   
   
@@ -203,9 +211,9 @@ CAVI <- function(Y, discreteDims=c(), maxiterations=1000L, tol = 0.001, seed=NUL
     boundaries = parameters$Zboundaries[[i]][,1]
     boundaries[length(boundaries)] = Inf
     print(boundaries)
-    parameters$pseudoY[,d] = findInterval(parameters$pseudoY[,d], boundaries)
+    parameters$pseudoY[,d] = findInterval(parameters$pseudoY[,d] - (parameters$M.Eta%*%parameters$M.Lambda[d,]), boundaries)
   }
-  
+  print(parameters$M.Eta%*%parameters$M.Lambda[d,])
   return( list(Lambda=varimaxLambda, Eta=Eta, Yhat=parameters$pseudoY) )}
 
 
@@ -220,12 +228,13 @@ for (i in 1:repeats){
 
 print(Lambda)
 R = matrix(0,3,3)
-R[1,2]=R[2,3]=R[3,1]=1
+R[1,2]=R[2,1]=R[3,3]=1
 predLambda = results[[i]]$Lambda%*%R
+predEta = results[[i]]$Eta%*%R
 round(predLambda,2)
-pdf(file= paste0("figures/heatmap1-", msk, ".pdf"))
-heatmap(Lambda, scale='none', Rowv = NA, Colv =NA, main = 'True Lambda')
-dev.off()
+# pdf(file= paste0("figures/heatmap1-", msk, ".pdf"))
+# heatmap(Lambda, scale='none', Rowv = NA, Colv =NA, main = 'True Lambda')
+# dev.off()
 pdf(file= paste0("figures/heatmap2-", msk, ".pdf"))
 heatmap(predLambda, scale = 'none', Rowv = NA, Colv =NA, main='VI Lambda')
 dev.off()
@@ -249,5 +258,13 @@ if (any((msk==c(2,3)))){
   #plot(sort(abs(Errors)), main=paste('Sorted error of Imputed values RMSE=', round(RMSerror,3)), lty=1)
   dev.off()
 }
+
+RMSerror = sqrt(mean((predEta- Eta)**2))
+print(RMSerror)
+Errors = as.vector(predEta - Eta)
+pdf(file= paste0("figures/errorsetahist-", msk, ".pdf"))
+hist(Errors, main=paste('Histogram of Eta errors, RMSE=', round(RMSerror,3)))
+#plot(sort(abs(Errors)), main=paste('Sorted error of Imputed values RMSE=', round(RMSerror,3)), lty=1)
+dev.off()
 
 

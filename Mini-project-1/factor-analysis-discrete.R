@@ -82,8 +82,8 @@ CAVI <- function(Y, discreteDims=c(), maxiterations=1000L, tol = 0.1, seed=NULL)
   parameters$S.Eta =  rWishart(parameters$D, parameters$K, diag(1/parameters$K,parameters$K))[,,1] #the same for each observation
   
   ## Initialise b parameters (a does not change)
-  parameters$b = matrix(rgamma(parameters$D*parameters$K, shape=2, rate= 1/parameters$b0), nrow=parameters$D, ncol=parameters$K) 
-  parameters$a = parameters$a0 + 1/2
+  parameters$a = parameters$a0 + 0.5
+  parameters$b = matrix(rgamma(parameters$D*parameters$K, shape=2, rate= 1/parameters$a), nrow=parameters$D, ncol=parameters$K) # has mean parameters$a
   
   
   # Functions for calculating expectations
@@ -160,9 +160,9 @@ VILambda = results[[i]]$Lambda
 R = diag(1,K)
 R[1,1]=-1
 VILambda=VILambda%*%R
-pdf(file= "figures/heatmap1disconly.pdf")
-heatmap(Lambda, scale='none', Rowv = NA, Colv =NA, main = 'True Lambda cont only')
-dev.off()
+# pdf(file= "figures/heatmap1disconly.pdf")
+# heatmap(Lambda, scale='none', Rowv = NA, Colv =NA, main = 'True Lambda discrete only')
+# dev.off()
 pdf(file= "figures/heatmap2disconly.pdf")
-heatmap(VILambda, scale = 'none', Rowv = NA, Colv =NA, main='VI Lambda cont only')
+heatmap(VILambda, scale = 'none', Rowv = NA, Colv =NA, main='VI Lambda discrete only')
 dev.off()

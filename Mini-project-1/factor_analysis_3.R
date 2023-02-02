@@ -38,8 +38,8 @@ CAVI <- function(Y, maxiterations=1000L, tol = 0.1, seed=NULL){
   parameters$S.Eta =  rWishart(parameters$D, parameters$K, diag(1/parameters$K,parameters$K))[,,1] #the same for each observation
   
   ## Initialise b parameters (a does not change)
-  parameters$b = matrix(rgamma(parameters$D*parameters$K, shape=2, rate= 1/parameters$b0), nrow=parameters$D, ncol=parameters$K) 
   parameters$a = parameters$a0 + 0.5
+  parameters$b = matrix(rgamma(parameters$D*parameters$K, shape=2, rate= 1/parameters$a), nrow=parameters$D, ncol=parameters$K) # has mean parameters$a
   
   
   # Functions for calculating expectations
@@ -124,11 +124,11 @@ for (i in 1:repeats){
 idx = which.max(ELBOlast)
 pdf(file= "figures/ELBOcontonly.pdf")
 plot(results[[idx]]$ELBO, type='o', col='red', xlab = 'Iteration', ylab= 'ELBO cont only')
-dev.off()
 temp = c(1:repeats)
 for (j in sample(temp[-idx], 4)){
   lines(results[[j]]$ELBO)
 }
+dev.off()
 print(ELBOlast[idx])
 VILambda = results[[idx]]$Lambda
 R = diag(1,K)

@@ -5,40 +5,40 @@ if (!require("pacman")) {
 }
 pacman::p_load(MASS, pracma, RColorBrewer, truncnorm)
 setwd("/home/hutchings/Documents/PhD-year-1/PhD-year-1-code/Mini-project-1")
+set.seed(1234)
+
 # Generate Data
-N = 2000L
-D = 10L
-K = 3L
-Lambda = matrix(0L, D, K)#DxK
+N = 2000L #number of samples
+D = 10L # num observed dimensions
+K = 3L # num latent dimensions
+# create Lambda, loadings matrix, structure
+Lambda = matrix(0L, D, K) #DxK
 Lambda[1:4, 1] = 1L
 Lambda[5:8, 2] = 1L
-Lambda[9:10, 3] = 1L #doesnt work if small??
-set.seed(1234)
-Eta = matrix(NA, N, K)
-Yfull = matrix(NA, N, D)
-Sigma = diag(1L,D)
-tmp = diag(1L,K)
-tmp2 = rep(0L, K)
+Lambda[9:10, 3] = 1L 
+
+# create Eta, and Yfull matrix (the continuous version)
+Zfull = matrix(NA, N, D)
+Sigma = diag(1L, D)
+Eta = matrix(rnorm(N*K), nrow=N)
 for (n in 1:N){
-  Eta[n,] = mvrnorm(1, tmp2, tmp)
-  Yfull[n,] = mvrnorm(1, Lambda%*%Eta[n,], Sigma)
+  Zfull[n,] = mvrnorm(1, Lambda%*%Eta[n,], Sigma)
 }
-#Yfull = mvrnorm(N, rep(0L, D) , tcrossprod(Lambda) + diag(1L,D))
 
 # Convert dimensions to discrete
-discreteDims = c(1,7,9)
-groups = list(c(0.1,0.1,0.5,0.3), c(0.1,0.4,0.2,0.2,0.1), c(0.5,0.5), c(0.5,0.5), c(0.5,0.5), c(0.5,0.5), c(0.5,0.5), c(0.5,0.5), c(0.5,0.5), c(0.5,0.5))# ith element is probability of being in group i 
-MakeDiscrete <- function(Y, discreteDims, groups, doplot=TRUE){
-  discreteY = sapply(1:length(discreteDims), function(i) stepfun(cumsum(groups[[i]]), 1:(length(groups[[i]])+1L))( pnorm(scale(Y[, discreteDims[i]])) ) )
-  Y[,discreteDims] = discreteY
+discreteDims = c(1,7,9) # which dimensions to make discrete?
+groups = list(c(0.1,0.1,0.5,0.3), c(0.1,0.4,0.2,0.2,0.1), c(0.5,0.5))# ith element is probability of being in group i 
+MakeDiscrete <- function(Y, discreteDims, groups){
+  Y[,discreteDims] = sapply(
+    1:length(discreteDims),
+    function(i) stepfun(cumsum(groups[[i]]), 1:(length(groups[[i]])+1L))( pnorm(scale(Y[, discreteDims[i]])) ) )
   Y
 }
-Yfull = MakeDiscrete(Yfull, discreteDims, groups)
+Yfull = MakeDiscrete(Zfull, discreteDims, groups)
+
+## make some data missing set msk=1,2,3 depending on how much missing data required
+msk=2
 prob = 0.1 # probability of data begin missing
-
-
-## set msk=1,2,3 depending on how much missing data required
-msk=3
 if (msk==1){
   missingMask = matrix(0, N,D)
 }else if (msk==2){
@@ -47,10 +47,11 @@ if (msk==1){
   missingMask = matrix(rbinom(N*D,1,prob=prob), nrow=N)
   missingMask[1:floor(N*0.75),c(1,3,5,6)] = 1
 }
+
 prob = mean(missingMask)
-pdf(file= paste0("figures/missing-", msk, ".pdf"))
+#pdf(file= paste0("figures/missing-", msk, ".pdf"))
 heatmap(missingMask, scale = "none", Rowv = NA, Colv = NA, col = c('white', 'black'), labRow = '', xlab = 'Dimension', ylab='Individual', main = paste('Missing Data Proportion: ', prob))
-dev.off()
+#dev.off()
 Y=Yfull
 Y[as.logical(missingMask)] = NA 
 
@@ -88,7 +89,7 @@ CAVI <- function(Y, discreteDims=c(), maxiterations=1000L, tol = 0.001, seed=NUL
   
   
   parameters$Zboundaries =  apply(Y[,discreteDims], 2L, boundaries, simplify=FALSE)
-  parameters$M.Z = matrix(rnorm(parameters$N*parameters$NdiscreteDims), nrow=parameters$N, ncol=parameters$NdiscreteDims) #not the actual mean! only the mean in the truncated normal
+  parameters$M.Z = matrix(rnorm(parameters$N*parameters$NdiscreteDims), nrow=parameters$N, ncol=parameters$NdiscreteDims) #not the actual mean! only the mean in the truncated normal, initialised randomly
   #parameters$Zcov = diag(1L, nrow=parameters$N) #for each discrete dimension
   
   parameters$missingMask = is.na(Y)
@@ -102,10 +103,9 @@ CAVI <- function(Y, discreteDims=c(), maxiterations=1000L, tol = 0.001, seed=NUL
   }
   
   
-  parameters$pseudoY = Y
+  parameters$pseudoY = Y # last category refers to missing data
   #initialise missing values of pseudoY with their mean
   for (d in 1:parameters$D){parameters$pseudoY[parameters$missingMask[,d],d] = Ymu[d]}
-  
   
   # making all continuous
   parameters$pseudoY[, discreteDims] = sapply(1:parameters$NdiscreteDims, 
@@ -135,7 +135,7 @@ CAVI <- function(Y, discreteDims=c(), maxiterations=1000L, tol = 0.001, seed=NUL
     parameters$M.Lambda
   }
   E.LambdaTLambda <- function(parameters) {
-    crossprod(parameters$M.Lambda) + rowSums(parameters$S.Lambda,dims=2L)
+    crossprod(parameters$M.Lambda) + rowSums(parameters$S.Lambda, dims=2L)
   }
   E.Lambda2 <-function(parameters){
     (parameters$M.Lambda**2) + t(apply(parameters$S.Lambda, 3L, diag))
@@ -150,7 +150,6 @@ CAVI <- function(Y, discreteDims=c(), maxiterations=1000L, tol = 0.001, seed=NUL
     parameters$a / parameters$b
   }
   
-  #check
   E.Z <- function(parameters){
     sapply(1:parameters$NdiscreteDims, 
            function(i) etruncnorm(a=parameters$Zboundaries[[i]][Y[,discreteDims[i]], ][,1],
@@ -231,12 +230,12 @@ R[1,2]=R[2,1]=R[3,3]=1
 predLambda = results[[i]]$Lambda%*%R
 predEta = results[[i]]$Eta%*%R
 round(predLambda,2)
-# pdf(file= paste0("figures/heatmap1-", msk, ".pdf"))
+# #pdf(file= paste0("figures/heatmap1-", msk, ".pdf"))
 # heatmap(Lambda, scale='none', Rowv = NA, Colv =NA, main = 'True Lambda')
-# dev.off()
-pdf(file= paste0("figures/heatmap2-", msk, ".pdf"))
+# #dev.off()
+#pdf(file= paste0("figures/heatmap2-", msk, ".pdf"))
 heatmap(predLambda, scale = 'none', Rowv = NA, Colv =NA, main='VI Lambda')
-dev.off()
+#dev.off()
 
 #scaling Y then looking at Its errors
 if (any((msk==c(2,3)))){
@@ -250,21 +249,21 @@ if (any((msk==c(2,3)))){
     Yfullscaled[,d] = (Yfull[,d]-mu)/sdY
   }
   RMSerror = sqrt(mean((Yhatscaled[tmp] - Yfullscaled[tmp])**2))
-  print(RMSerror)
+  print(paste('RMSE Y missing', RMSerror))
   Errors = Yhatscaled[tmp] - Yfullscaled[tmp]
-  pdf(file= paste0("figures/errorshist-", msk, ".pdf"))
+  #pdf(file= paste0("figures/errorshist-", msk, ".pdf"))
   hist(Errors, main=paste('Histogram of errors, RMSE=', round(RMSerror,3)))
   #plot(sort(abs(Errors)), main=paste('Sorted error of Imputed values RMSE=', round(RMSerror,3)), lty=1)
-  dev.off()
+  #dev.off()
 }
 
 RMSerror = sqrt(mean((predEta- Eta)**2))
-print(RMSerror)
+print(paste('RMSE Eta', RMSerror))
 Errors = as.vector(predEta - Eta)
-pdf(file= paste0("figures/errorsetahist-", msk, ".pdf"))
+#pdf(file= paste0("figures/errorsetahist-", msk, ".pdf"))
 hist(Errors, main=paste('Histogram of Eta errors, RMSE=', round(RMSerror,3)))
 #plot(sort(abs(Errors)), main=paste('Sorted error of Imputed values RMSE=', round(RMSerror,3)), lty=1)
-dev.off()
+#dev.off()
 
 
 
@@ -274,10 +273,10 @@ if (msk==3){
   tmp = 1/(1-colMeans(missingMask))
   for (d in 1:D){
     tmpLambda[d,]=tmp[d]*predLambda[d,]}
-  pdf(file= paste0("figures/heatmapscaled2-", msk, ".pdf"))
+  #pdf(file= paste0("figures/heatmapscaled2-", msk, ".pdf"))
   heatmap(tmpLambda, scale = 'none', Rowv = NA, Colv =NA, main='VI Lambda (scaled according to missing data)')
-  dev.off()
-  print(sqrt(mean((tmpLambda-Lambda)**2)))
-  print(sqrt(mean((predLambda-Lambda)**2)))
+  #dev.off()
+  print(paste('Scaled Lambda error',sqrt(mean((tmpLambda-Lambda)**2))))
+  print(paste( 'Lambda error', sqrt(mean((predLambda-Lambda)**2))))
 }
 
